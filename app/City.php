@@ -11,7 +11,7 @@ class City extends Model
      *
      * @var string
      */
-    protected $table = 'geos.cities';
+    protected $table = 'geos.zonas';
 
     /**
      * Indicates if the model should be timestamped.
@@ -25,5 +25,5 @@ class City extends Model
      *
      * @var array
      */
-    protected $fillable = ['code', 'name', 'lat', 'lng', 'zoom', 'geometry', 'polygon'];
+    protected $fillable = ['code', 'name', 'lat', 'lng', 'rad'];
 }

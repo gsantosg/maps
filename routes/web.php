@@ -21,3 +21,4 @@ Route::get('files', 'FilesController@index');
 Route::get('cities', 'CitiesController@getAll');
 Route::get('cities/{code}', 'CitiesController@getCity');
 Route::post('cities', 'CitiesController@storeCity');
+Route::put('cities', 'CitiesController@updateCity');

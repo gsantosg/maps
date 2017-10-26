@@ -1,51 +1,25 @@
-var paths = [];
 var map;
-var poly;
-var geometry;
-var marker;
+var drawingManager;
+var circle;
+var listener, listener2;
+var cities;
 
 function initMap()
 {
     map = new google.maps.Map(document.getElementById('map'), {
-        zoom: 6,
-        center: { lat: 21.883501, lng: -102.293532 }
+        zoom: 8,
+        center: { lat: 19.213501, lng: -99.293532 }
     });
+
+    initDrawManager();
+
+    getCities();
 }
 
-/**
- * Handles click events on a map, and adds a new point to the Polyline.
- * Updates the encoding text area with the path's encoded values.
- */
-function addLatLngToPoly(latLng, poly)
-{
-    path = poly.getPath();
-    path.push(latLng);
-    paths.push([latLng.lat(), latLng.lng()]);
-}
-
-function savePolygon()
+function saveZone()
 {
     var name = $('#name').val();
     var code = $('#code').val();
-    paths.push(paths[0]);
-
-    if (paths[0] != undefined) {
-        geometry = {
-            "type": "FeatureCollection",
-            "features": [
-                {
-                    "type": "Feature",
-                    "properties": {},
-                    "geometry": {
-                        "type": "Polygon",
-                        "coordinates": [
-                            paths
-                        ]
-                    }
-                }
-            ]
-        };
-    }
 
     $.ajax({
         url: '/cities',
@@ -53,43 +27,235 @@ function savePolygon()
         data: {
             name: name,
             code: code,
-            polygon: JSON.stringify(geometry)
+            lat: circle ? circle.center.lat() : null,
+            lng: circle ? circle.center.lng() : null,
+            rad: circle ? circle.radius : null
         },
         headers: {
             'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
         }
     })
     .done(function(response) {
-        console.log(response);
+        if (response.status == 1) {
+            toastr.success( 'Se almacenó correctamente.', '¡Éxito!', { timeOut: 4000 } );
+            $('#name').val('')
+            $('#code').val('')
+        } else if (response.errors) {
+            $('#nameError').html(response.errors.name)
+            $('#codeError').html(response.errors.code)
+            setTimeout(function() {
+                $('#nameError').html('')
+                $('#codeError').html('')
+            }, 3000);
+        } else {
+            toastr.error('Ocurrió un error, intenta nuevamente.', '¡Error!', { timeOut: 4000 });
+        }
     })
     .fail(function() {
         console.log("error");
+    })
+    .always(function(){
+        getCities();
     });
 
     clearPolygon()
 }
 
+function initDrawManager()
+{
+    drawingManager = new google.maps.drawing.DrawingManager({
+        drawingControl: false,
+        drawingControlOptions: {
+            position: google.maps.ControlPosition.TOP_CENTER,
+            drawingModes: ['circle']
+        },
+        circleOptions: {
+            fillColor: '#333333',
+            fillOpacity: .4,
+            strokeWeight: 2,
+            clickable: false,
+            editable: true,
+            draggable: true,
+            zIndex: 1
+        }
+    });
+
+    drawingManager.setMap(map);
+
+    google.maps.event.addListener(drawingManager, 'overlaycomplete', function(event){
+        if (event.type == 'circle') {
+            circle = event.overlay;
+            drawingManager.setDrawingMode(null);
+            listener = map.addListener('click', clearPolygon);
+        }
+    });
+}
+
+function initCircle(circle)
+{
+    clearPolygon();
+
+    this.circle = circle;
+
+    circle.setEditable(false);
+}
+
 function drawPolygon()
 {
-    initPolygon();
+    if (drawingManager) {
+        drawingManager.setDrawingMode('circle')
+    }
+}
 
-    google.maps.event.addListener(map, 'click', function(event) {
-        addLatLngToPoly(event.latLng, poly);
-    });  
+function editPolygon()
+{
+    if (circle) {
+        circle.setEditable(true)
+    } else {
+        toastr.warning('No hay ningún circulo', '¡Ojo!', {timeOut: 1000});
+    }
 }
 
 function clearPolygon()
 {
-    poly!=undefined ? poly.setMap(null) : initPolygon();
+    if (circle) {
+        circle.setEditable(false);
+        circle.setMap(null);
+        circle = null;
+        if (listener) {
+            google.maps.event.removeListener(listener)
+        }
+    } else {
+        toastr.warning('No hay ningún circulo', '¡Ojo!', {timeOut: 1000});
+    }
 }
 
-function initPolygon() {
-    poly = new google.maps.Polygon({
-        strokeColor: '#ff0033',
-        fillColor: '#ff0033',
-        strokeOpacity: 1,
-        strokeWeight: 3,
-        map: map
+function getCities()
+{
+    $.ajax({
+        url: '/cities',
+        type: 'GET',
+        headers: {
+            'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
+        },
+        beforeSend: function() {
+            clearCities();
+        },
+        success: function(response) {
+            $.each(response.data, function(index, val) {
+                var zone = new google.maps.Circle({
+                    strokeColor: '#333333',
+                    strokeOpacity: 0.8,
+                    strokeWeight: 2,
+                    fillColor: '#333333',
+                    fillOpacity: 0.35,
+                    center: {lat: parseFloat(val.lat), lng: parseFloat(val.lng)},
+                    radius: parseFloat(val.rad),
+                    zIndex: 1,
+                    id: val.id,
+                    name: val.name,
+                    code: val.code
+                });
+                cities.push(zone);
+            });
+            showCities();
+        }
     });
-    paths = [];
+}
+
+function updateZone()
+{
+    var name = $('#name').val();
+    var code = $('#code').val();
+    var id = $('#updt_zone').attr('data-id');
+
+    $.ajax({
+        url: '/cities',
+        method: 'PUT',
+        data: {
+            id: id,
+            name: name,
+            code: code,
+            lat: circle ? circle.center.lat() : null,
+            lng: circle ? circle.center.lng() : null,
+            rad: circle ? circle.radius : null
+        },
+        headers: {
+            'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
+        }
+    })
+    .done(function(response) {
+        if (response.status == 1) {
+            toastr.success( 'Se actualizó correctamente.', '¡Éxito!', { timeOut: 4000 } );
+            $('#name').val('')
+            $('#code').val('')
+        } else if (response.errors) {
+            $('#nameError').html(response.errors.name)
+            $('#codeError').html(response.errors.code)
+            setTimeout(function() {
+                $('#nameError').html('')
+                $('#codeError').html('')
+            }, 3000);
+        } else {
+            toastr.error('Ocurrió un error, intenta nuevamente.', '¡Error!', { timeOut: 4000 });
+        }
+    })
+    .fail(function() {
+        console.log("error");
+    })
+    .always(function(){
+        getCities();
+    });
+
+    clearPolygon()
+}
+
+function clearCities() {
+    if (cities) {
+        for (var i = cities.length - 1; i >= 0; i--) {
+            cities[i].setMap(null);
+        }
+    }
+    cities = [];
+}
+
+function showCities() {
+    if (cities) {
+        for (var i = cities.length - 1; i >= 0; i--) {
+            let zone = cities[i]
+            zone.setMap(map);
+            zone.addListener('click', function() {
+                startEdition(zone);
+            });
+        }
+        listener2 = map.addListener('click', cancelEdition);
+    }
+}
+
+function startEdition(zone)
+{
+    circle = zone;
+    circle.setEditable(true);
+    $('#name').val(zone.name);
+    $('#code').val(zone.code);
+    $('#sv_new_zone').css('display', 'none');
+    $('#updt_zone').attr('data-id', zone.id);
+    $('#updt_zone').css('display', 'block');
+}
+
+function cancelEdition()
+{
+    if (circle) {
+        circle.setEditable(false);
+        circle.setMap(null);
+    }
+    if (listener2) {
+        google.maps.event.removeListener(listener2)
+    }
+    showCities();
+    $('#name').val('');
+    $('#code').val('');
+    $('#sv_new_zone').css('display', 'block');
+    $('#updt_zone').removeAttr('data-id');
+    $('#updt_zone').css('display', 'none');
 }
